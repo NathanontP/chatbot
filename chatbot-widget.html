@@ -1,0 +1,117 @@
+<div id="chatbot-widget">
+  <div id="chatbot-button">💬</div>
+  <div id="chatbot-box">
+    <div id="chat-header">GPT Chatbot</div>
+    <div id="chat-messages"></div>
+    <div id="chat-input-container">
+      <input id="chat-input" type="text" placeholder="พิมพ์ข้อความ..." />
+      <button id="chat-send">ส่ง</button>
+    </div>
+  </div>
+</div>
+
+<style>
+  #chatbot-widget {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    font-family: Arial, sans-serif;
+    z-index: 9999;
+  }
+
+  #chatbot-button {
+    background: #4CAF50;
+    color: white;
+    border-radius: 50%;
+    width: 60px;
+    height: 60px;
+    text-align: center;
+    line-height: 60px;
+    font-size: 28px;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }
+
+  #chatbot-box {
+    display: none;
+    flex-direction: column;
+    width: 300px;
+    height: 400px;
+    background: white;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+  }
+
+  #chat-header {
+    background: #4CAF50;
+    color: white;
+    padding: 10px;
+    text-align: center;
+  }
+
+  #chat-messages {
+    flex: 1;
+    padding: 10px;
+    overflow-y: auto;
+    font-size: 14px;
+  }
+
+  #chat-input-container {
+    display: flex;
+    border-top: 1px solid #ccc;
+  }
+
+  #chat-input {
+    flex: 1;
+    padding: 8px;
+    border: none;
+    outline: none;
+  }
+
+  #chat-send {
+    padding: 8px 12px;
+    border: none;
+    background: #4CAF50;
+    color: white;
+    cursor: pointer;
+  }
+</style>
+
+<script>
+  const chatbotButton = document.getElementById('chatbot-button');
+  const chatbotBox = document.getElementById('chatbot-box');
+  const chatMessages = document.getElementById('chat-messages');
+  const chatInput = document.getElementById('chat-input');
+  const chatSend = document.getElementById('chat-send');
+
+  chatbotButton.addEventListener('click', () => {
+    chatbotBox.style.display = chatbotBox.style.display === 'flex' ? 'none' : 'flex';
+  });
+
+  async function sendMessage() {
+    const message = chatInput.value.trim();
+    if (!message) return;
+    
+    chatMessages.innerHTML += `<div><b>คุณ:</b> ${message}</div>`;
+    chatInput.value = '';
+
+    try {
+      const res = await fetch('http://localhost:3001/chat', { // เปลี่ยนเป็น URL server จริงถ้า deploy
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message })
+      });
+      const data = await res.json();
+      chatMessages.innerHTML += `<div><b>Bot:</b> ${data.reply}</div>`;
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    } catch (err) {
+      chatMessages.innerHTML += `<div style="color:red;">[Error] ติดต่อเซิร์ฟเวอร์ไม่ได้</div>`;
+    }
+  }
+
+  chatSend.addEventListener('click', sendMessage);
+  chatInput.addEventListener('keypress', e => {
+    if (e.key === 'Enter') sendMessage();
+  });
+</script>
