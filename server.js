@@ -7,14 +7,23 @@ const axios = require("axios");
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// อนุญาต origin ตามสภาพแวดล้อม (รองรับหลายโดเมนคั่นด้วยคอมม่า)
+// ---------- CORS ----------
 const ALLOWED = (process.env.ALLOWED_REFERER || "")
   .split(",")
   .map(s => s.trim())
   .filter(Boolean);
 
-// dev ปล่อยกว้างได้ แต่พอขึ้นจริงแนะนำล็อกโดเมนไว้ใน ALLOWED_REFERER
-app.use(cors(ALLOWED.length ? { origin: ALLOWED } : undefined));
+// ตั้งค่า CORS ชัดเจน + รองรับ preflight
+const corsOptions = {
+  origin: ALLOWED.length ? ALLOWED : true,     // dev = เปิดกว้าง, prod = ล็อกตาม ALLOWED
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type"],
+  credentials: false,
+};
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));           // สำคัญ: ให้ตอบ preflight
+// --------------------------
+
 app.use(express.json());
 
 // health check
@@ -31,17 +40,25 @@ app.post("/chat", async (req, res) => {
   }
 
   try {
+    // origin ของหน้าเว็บที่เรียกมา (Weebly)
+    const origin = req.headers.origin || "";
+    // ใช้ origin ที่อยู่ใน whitelist เป็น Referer ให้ OpenRouter
+    const refererForOpenRouter =
+      (ALLOWED.includes(origin) && origin) ||
+      ALLOWED[0] ||
+      process.env.ALLOWED_REFERER ||
+      "http://127.0.0.1:5500";
+
     const result = await axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
       {
-        model: "openai/gpt-4o-mini", // เปลี่ยนได้ตามสิทธิ์ของคีย์คุณ
+        model: "openai/gpt-4o-mini",           // เปลี่ยนได้ตามสิทธิ์ของคีย์คุณ
         messages: [{ role: "user", content: message }],
       },
       {
         headers: {
           Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-          "HTTP-Referer":
-            ALLOWED[0] || process.env.ALLOWED_REFERER || "http://127.0.0.1:5500",
+          "HTTP-Referer": refererForOpenRouter,
           "X-Title": "My Chatbot",
           "Content-Type": "application/json",
           Accept: "application/json",
