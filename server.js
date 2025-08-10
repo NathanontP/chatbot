@@ -21,7 +21,7 @@ const corsOptions = {
   credentials: false,
 };
 app.use(cors(corsOptions));
-app.options("*", cors(corsOptions));           // สำคัญ: ให้ตอบ preflight
+app.options(/.*/, cors(corsOptions));          // สำคัญ: ให้ตอบ preflight
 // --------------------------
 
 app.use(express.json());
