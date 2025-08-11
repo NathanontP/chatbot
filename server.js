@@ -10,18 +10,18 @@ const PORT = process.env.PORT || 3001;
 // ---------- CORS ----------
 const ALLOWED = (process.env.ALLOWED_REFERER || "")
   .split(",")
-  .map(s => s.trim())
+  .map((s) => s.trim())
   .filter(Boolean);
 
 // ตั้งค่า CORS ชัดเจน + รองรับ preflight
 const corsOptions = {
-  origin: ALLOWED.length ? ALLOWED : true,     // dev = เปิดกว้าง, prod = ล็อกตาม ALLOWED
+  origin: ALLOWED.length ? ALLOWED : true, // dev = เปิดกว้าง, prod = ล็อกตาม ALLOWED
   methods: ["GET", "POST", "OPTIONS"],
   allowedHeaders: ["Content-Type"],
   credentials: false,
 };
 app.use(cors(corsOptions));
-app.options(/.*/, cors(corsOptions));          // สำคัญ: ให้ตอบ preflight
+app.options(/.*/, cors(corsOptions)); // สำคัญ: ให้ตอบ preflight
 // --------------------------
 
 app.use(express.json());
@@ -52,8 +52,15 @@ app.post("/chat", async (req, res) => {
     const result = await axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
       {
-        model: "openai/gpt-4o-mini",           // เปลี่ยนได้ตามสิทธิ์ของคีย์คุณ
-        messages: [{ role: "user", content: message }],
+        model: "openai/gpt-4o-mini", // เปลี่ยนได้ตามสิทธิ์ของคีย์คุณ
+        messages: [
+          {
+            role: "system",
+            content:
+              "Answer everything in the style of Gen Alpha — casual, slang-heavy, short, and TikTok-esque.",
+          },
+          { role: "user", content: message },
+        ],
       },
       {
         headers: {
