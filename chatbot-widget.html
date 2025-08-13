@@ -1,84 +1,32 @@
-<div id="chatbot-widget">
-  <div id="chatbot-button">💬</div>
-  <div id="chatbot-box">
-    <div id="chat-header">GPT Chatbot</div>
+<div><div id="736191030936130204" align="left" style="width: 100%; overflow-y: hidden;" class="wcustomhtml"><div id="chatbot-widget">
+  <div id="chatbot-button">
+  <img id="nongkimbap-img" src="https://sites.webstriple.com/editor/uploads/1/5/3/5/153507041/custom_themes/944846531777549196/files/images/download-removebg-preview.png" width="60" height="60" alt="image"/></div>
+  <div id="chatbot-box" style="display: none;">
+    <div id="chat-header">Nong Kimbap</div>
     <div id="chat-messages"></div>
     <div id="chat-input-container">
-      <input id="chat-input" type="text" placeholder="พิมพ์ข้อความ..." />
+      <input id="chat-input" type="text" placeholder="พิมพ์ข้อความ...">
       <button id="chat-send">ส่ง</button>
     </div>
   </div>
 </div>
 
 <style>
-  #chatbot-widget {
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    font-family: Arial, sans-serif;
-    z-index: 9999;
-  }
-
-  #chatbot-button {
-    background: #4CAF50;
-    color: white;
-    border-radius: 50%;
-    width: 60px;
-    height: 60px;
-    text-align: center;
-    line-height: 60px;
-    font-size: 28px;
-    cursor: pointer;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-  }
-
-  #chatbot-box {
-    display: none;
-    flex-direction: column;
-    width: 300px;
-    height: 400px;
-    background: white;
-    border-radius: 10px;
-    overflow: hidden;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-  }
-
-  #chat-header {
-    background: #4CAF50;
-    color: white;
-    padding: 10px;
-    text-align: center;
-  }
-
-  #chat-messages {
-    flex: 1;
-    padding: 10px;
-    overflow-y: auto;
-    font-size: 14px;
-  }
-
-  #chat-input-container {
-    display: flex;
-    border-top: 1px solid #ccc;
-  }
-
-  #chat-input {
-    flex: 1;
-    padding: 8px;
-    border: none;
-    outline: none;
-  }
-
-  #chat-send {
-    padding: 8px 12px;
-    border: none;
-    background: #4CAF50;
-    color: white;
-    cursor: pointer;
-  }
+  #chatbot-widget{position:fixed;bottom:20px;right:20px;font-family:Arial,sans-serif;z-index:9999}
+  #chatbot-button{background:#4CAF50;color:#fff;border-radius:50%;width:60px;height:60px;text-align:center;line-height:60px;font-size:28px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+  #chatbot-box{display:none;flex-direction:column;width:300px;height:400px;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 4px 10px rgba(0,0,0,.3)}
+  #chat-header{background:#4CAF50;color:#fff;padding:10px;text-align:center}
+  #chat-messages{flex:1;padding:10px;overflow-y:auto;font-size:14px;background:#fafafa}
+  #chat-input-container{display:flex;border-top:1px solid #ccc}
+  #chat-input{flex:1;padding:8px;border:none;outline:none}
+  #chat-send{padding:8px 12px;border:none;background:#4CAF50;color:#fff;cursor:pointer}
+  .msg{margin:6px 0}
+  .typing{color:#888;font-style:italic}
 </style>
 
 <script>
+  const API_URL = "https://weebly-chatbot-api.onrender.com/chat";
+
   const chatbotButton = document.getElementById('chatbot-button');
   const chatbotBox = document.getElementById('chatbot-box');
   const chatMessages = document.getElementById('chat-messages');
@@ -89,29 +37,53 @@
     chatbotBox.style.display = chatbotBox.style.display === 'flex' ? 'none' : 'flex';
   });
 
+  function append(who, text, cls='') {
+    const div = document.createElement('div');
+    div.className = `msg ${cls}`;
+    div.innerHTML = `<b>${who}:</b> ${text}`;
+    chatMessages.appendChild(div);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    return div;
+  }
+
   async function sendMessage() {
     const message = chatInput.value.trim();
     if (!message) return;
-    
-    chatMessages.innerHTML += `<div><b>คุณ:</b> ${message}</div>`;
+
+    append('คุณ', message);
     chatInput.value = '';
 
+    const typing = append('', 'กำลังพิมพ์…', 'typing');
+
     try {
-      const res = await fetch('http://localhost:3001/chat', { // เปลี่ยนเป็น URL server จริงถ้า deploy
+      const res = await fetch(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message })
       });
       const data = await res.json();
-      chatMessages.innerHTML += `<div><b>Bot:</b> ${data.reply}</div>`;
-      chatMessages.scrollTop = chatMessages.scrollHeight;
+      typing.remove();
+      if (!res.ok) throw new Error(typeof data === 'string' ? data : JSON.stringify(data));
+
+      // เพิ่มแสดง version
+      let botReply = data.reply || '(no reply)';
+      if (data.version) botReply += ` <small style="color:gray;">(${data.version})</small>`;
+      append('Bot', botReply);
+
     } catch (err) {
-      chatMessages.innerHTML += `<div style="color:red;">[Error] ติดต่อเซิร์ฟเวอร์ไม่ได้</div>`;
+      typing.remove();
+      append('ระบบ', '<span style="color:red;">[Error] ติดต่อเซิร์ฟเวอร์ไม่ได้</span>');
+      console.error(err);
     }
   }
 
   chatSend.addEventListener('click', sendMessage);
-  chatInput.addEventListener('keypress', e => {
-    if (e.key === 'Enter') sendMessage();
-  });
+  chatInput.addEventListener('keypress', e => { if (e.key === 'Enter') sendMessage(); });
 </script>
+
+
+</div>
+
+
+
+</div>
