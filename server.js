@@ -21,9 +21,10 @@ const norm = s => s.replace(/\/$/, "").replace(/^https?:\/\//, "");
 const ALLOWED = rawAllowed.map(norm);
 
 const corsOptions = {
-  origin(origin, cb) {
+  origin: (origin, cb) => {
     if (!origin) return cb(null, true);
-    cb(ALLOWED.includes(norm(origin)) ? null : new Error("CORS not allowed"), ALLOWED.includes(norm(origin)));
+    const allowed = ALLOWED.includes(norm(origin));
+    cb(allowed ? null : new Error("CORS not allowed"), allowed);
   },
   methods: ["GET", "POST", "OPTIONS"],
   allowedHeaders: ["Content-Type"],
@@ -44,7 +45,7 @@ const KB_PATH = path.join(__dirname, "kb", "restaurant.md");
 let KB = [];
 let lastKBModified = 0;
 
-// system prompt base (ไม่รวม context)
+// system prompt base
 const BUSINESS_PROFILE_BASE = `
 คุณคือผู้ช่วยตอบแชตร้านอาหาร
 คุณต้องตอบเฉพาะข้อมูลที่ปรากฏในบริบทด้านล่างเท่านั้น
@@ -64,7 +65,6 @@ function cosine(a, b) {
   return s / (Math.sqrt(na) * Math.sqrt(nb) + 1e-8);
 }
 
-// แยก chunk ตามหัวข้อ (# ...)
 function chunkTextBySection(text) {
   return text
     .split(/\n(?=# )/)
@@ -103,6 +103,9 @@ async function ensureKBLoaded() {
     const raw = fs.readFileSync(KB_PATH, "utf8");
     const chunks = chunkTextBySection(raw);
     const embs = await embed(chunks);
+    if (!embs.length) {
+      console.warn("[KB] No embeddings returned");
+    }
     KB = chunks.map((t, i) => ({ text: t, embedding: embs[i] }));
     console.log(`[KB] Reload complete. ${KB.length} chunks`);
   }
@@ -144,11 +147,13 @@ app.post("/chat", async (req, res) => {
     let context = "";
     if (KB.length) {
       const [qEmb] = await embed([message]);
-      const top = KB.map(it => ({ ...it, score: cosine(qEmb, it.embedding) }))
-        .sort((a, b) => b.score - a.score)
-        .filter(s => s.score > 0.9)
-        .slice(0, 4);
-      context = top.map((s, i) => `【${i + 1}】\n${s.text}`).join("\n\n");
+      if (qEmb) {
+        const top = KB.map(it => ({ ...it, score: cosine(qEmb, it.embedding) }))
+          .sort((a, b) => b.score - a.score)
+          .filter(s => s.score > 0.75) // ลด threshold
+          .slice(0, 4);
+        context = top.map((s, i) => `【${i + 1}】\n${s.text}`).join("\n\n");
+      }
     }
 
     if (!context) {
