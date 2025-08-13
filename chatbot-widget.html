@@ -25,7 +25,6 @@
 </style>
 
 <script>
-  // ✅ ใช้ API ของคุณบน Render
   const API_URL = "https://weebly-chatbot-api.onrender.com/chat";
 
   const chatbotButton = document.getElementById('chatbot-button');
@@ -38,7 +37,7 @@
     chatbotBox.style.display = chatbotBox.style.display === 'flex' ? 'none' : 'flex';
   });
 
-  function append(who, text, cls=''){
+  function append(who, text, cls='') {
     const div = document.createElement('div');
     div.className = `msg ${cls}`;
     div.innerHTML = `<b>${who}:</b> ${text}`;
@@ -66,7 +65,7 @@
       typing.remove();
       if (!res.ok) throw new Error(typeof data === 'string' ? data : JSON.stringify(data));
 
-      // แก้ไขตรงนี้: append reply พร้อม version
+      // เพิ่มแสดง version
       let botReply = data.reply || '(no reply)';
       if (data.version) botReply += ` <small style="color:gray;">(${data.version})</small>`;
       append('Bot', botReply);
@@ -81,6 +80,7 @@
   chatSend.addEventListener('click', sendMessage);
   chatInput.addEventListener('keypress', e => { if (e.key === 'Enter') sendMessage(); });
 </script>
+
 
 </div>
 

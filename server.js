@@ -1,4 +1,3 @@
-// server.js
 require("dotenv").config();
 const BOT_VERSION = "1.1 - KB only";
 const express = require("express");
@@ -68,7 +67,7 @@ function cosine(a, b) {
 // แยก chunk ตามหัวข้อ (# ...)
 function chunkTextBySection(text) {
   return text
-    .split(/\n(?=# )/) // แยกเมื่อเจอหัวข้อ
+    .split(/\n(?=# )/)
     .map(s => s.trim())
     .filter(Boolean);
 }
@@ -120,7 +119,6 @@ ensureKBLoaded().catch(err => {
 // ------------------------------------
 app.get("/health", (_req, res) => res.json({ status: "ok", version: BOT_VERSION }));
 
-
 // ------------------------------------
 // Chat
 // ------------------------------------
@@ -135,7 +133,7 @@ app.post("/chat", async (req, res) => {
   }
 
   try {
-    await ensureKBLoaded(); // โหลด KB ใหม่ถ้าไฟล์เปลี่ยน
+    await ensureKBLoaded();
 
     const origin = req.headers.origin || "";
     const chosenReferer =
@@ -148,14 +146,13 @@ app.post("/chat", async (req, res) => {
       const [qEmb] = await embed([message]);
       const top = KB.map(it => ({ ...it, score: cosine(qEmb, it.embedding) }))
         .sort((a, b) => b.score - a.score)
-        .filter(s => s.score > 0.9) // กรองให้ใช้เฉพาะที่คล้ายจริงๆ
+        .filter(s => s.score > 0.9)
         .slice(0, 4);
       context = top.map((s, i) => `【${i + 1}】\n${s.text}`).join("\n\n");
     }
 
-    // ถ้าไม่มี context ที่คล้ายพอ → ตอบว่าไม่มีข้อมูล
     if (!context) {
-      return res.json({ reply: "ไม่มีข้อมูลในระบบ กรุณาติดต่อร้าน (โทร/LINE/FB)" });
+      return res.json({ reply: "ไม่มีข้อมูลในระบบ กรุณาติดต่อร้าน (โทร/LINE/FB)", version: BOT_VERSION });
     }
 
     const systemPrompt = `${BUSINESS_PROFILE_BASE}\n\nบริบท:\n${context}`;
@@ -182,7 +179,8 @@ app.post("/chat", async (req, res) => {
     );
 
     const reply = result.data?.choices?.[0]?.message?.content || "(no reply)";
-    res.json({ reply });
+    res.json({ reply, version: BOT_VERSION });
+
   } catch (err) {
     console.error("OpenRouter error:", err.response?.data || err.message);
     res.status(500).json({ error: err.response?.data || err.message });
