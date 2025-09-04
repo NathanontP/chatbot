@@ -1,7 +1,8 @@
-<div><div id="736191030936130204" align="left" style="width: 100%; overflow-y: hidden;" class="wcustomhtml"><div id="chatbot-widget">
+<div id="chatbot-widget">
   <div id="chatbot-button">
-  <img id="nongkimbap-img" src="https://sites.webstriple.com/editor/uploads/1/5/3/5/153507041/custom_themes/944846531777549196/files/images/download-removebg-preview.png" width="60" height="60" alt="image"/></div>
-  <div id="chatbot-box" style="display: none;">
+    <img id="nongkimbap-img" src="https://sites.webstriple.com/editor/uploads/1/5/3/5/153507041/custom_themes/944846531777549196/files/images/download-removebg-preview.png" width="60" height="60" alt="image"/>
+  </div>
+  <div id="chatbot-box" style="display:none;">
     <div id="chat-header">Nong Kimbap</div>
     <div id="chat-messages"></div>
     <div id="chat-input-container">
@@ -11,9 +12,18 @@
   </div>
 </div>
 
+<!-- Modal ดูรูปขยาย -->
+<div id="img-modal">
+  <span class="close" id="img-close">&times;</span>
+  <div class="box">
+    <img id="img-modal-img" alt="">
+    <div class="caption" id="img-modal-cap"></div>
+  </div>
+</div>
+
 <style>
   #chatbot-widget{position:fixed;bottom:20px;right:20px;font-family:Arial,sans-serif;z-index:9999}
-  #chatbot-button{background:#4CAF50;color:#000000;border-radius:50%;width:60px;height:60px;text-align:center;line-height:60px;font-size:28px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+  #chatbot-button{background:#4CAF50;color:#000;border-radius:50%;width:60px;height:60px;text-align:center;line-height:60px;font-size:28px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.3)}
   #chatbot-box{display:none;flex-direction:column;width:300px;height:400px;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 4px 10px rgba(0,0,0,.3)}
   #chat-header{background:#4CAF50;color:#fff;padding:10px;text-align:center}
   #chat-messages{flex:1;padding:10px;overflow-y:auto;font-size:14px;background:#fafafa}
@@ -22,10 +32,22 @@
   #chat-send{padding:8px 12px;border:none;background:#4CAF50;color:#fff;cursor:pointer}
   .msg{margin:6px 0}
   .typing{color:#888;font-style:italic}
+
+  /* แกลเลอรีรูปในข้อความบอท */
+  .img-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:6px}
+  .img-thumb{width:100%;height:80px;object-fit:cover;border-radius:6px;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.2)}
+
+  /* ===== Modal รูปขยาย ===== */
+  #img-modal{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;z-index:100000}
+  #img-modal.show{display:flex}
+  #img-modal .box{max-width:92vw;max-height:92vh;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 8px 28px rgba(0,0,0,.45);display:flex;flex-direction:column}
+  #img-modal img{max-width:92vw;max-height:78vh;object-fit:contain;background:#000}
+  #img-modal .caption{padding:10px 14px;font-weight:bold}
+  #img-modal .close{position:absolute;top:14px;right:18px;color:#fff;font-size:28px;cursor:pointer;user-select:none}
 </style>
 
 <script>
-  const API_URL = "http://localhost:3001/chat";
+  const API_URL = "https://weebly-chatbot-api.onrender.com/chat";
 
   const chatbotButton = document.getElementById('chatbot-button');
   const chatbotBox = document.getElementById('chatbot-box');
@@ -33,18 +55,53 @@
   const chatInput = document.getElementById('chat-input');
   const chatSend = document.getElementById('chat-send');
 
+  // Modal elements
+  const modal = document.getElementById('img-modal');
+  const modalImg = document.getElementById('img-modal-img');
+  const modalCap = document.getElementById('img-modal-cap');
+  const modalClose = document.getElementById('img-close');
+
   chatbotButton.addEventListener('click', () => {
     chatbotBox.style.display = chatbotBox.style.display === 'flex' ? 'none' : 'flex';
   });
 
-  function append(who, text, cls='') {
+  function append(who, html, cls='') {
     const div = document.createElement('div');
     div.className = `msg ${cls}`;
-    div.innerHTML = `<b>${who}:</b> ${text}`;
+    div.innerHTML = `<b>${who}:</b> ${html}`;
     chatMessages.appendChild(div);
     chatMessages.scrollTop = chatMessages.scrollHeight;
     return div;
   }
+
+  // แปลง URL → ชื่อเมนู จากชื่อไฟล์
+  function menuNameFromUrl(url) {
+    try {
+      const last = url.split('/').pop() || '';
+      const decoded = decodeURIComponent(last);
+      const noExt = decoded.replace(/\.[^.]+$/, '');
+      return noExt.replace(/[-_]+/g, ' ').trim();
+    } catch (e) {
+      return 'เมนู';
+    }
+  }
+
+  // เปิด/ปิด Modal
+  function openModal(url, name) {
+    modalImg.src = url;
+    modalImg.alt = name;
+    modalCap.textContent = name || 'เมนู';
+    modal.classList.add('show');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeModal() {
+    modal.classList.remove('show');
+    modalImg.src = '';
+    document.body.style.overflow = '';
+  }
+  modalClose.addEventListener('click', closeModal);
+  modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
 
   async function sendMessage() {
     const message = chatInput.value.trim();
@@ -65,10 +122,36 @@
       typing.remove();
       if (!res.ok) throw new Error(typeof data === 'string' ? data : JSON.stringify(data));
 
-      // เพิ่มแสดง version
-      let botReply = data.reply || '(no reply)';
-      if (data.version) botReply += ` <small style="color:gray;">(${data.version})</small>`;
-      append('Bot', botReply);
+      // ข้อความบอท
+      let text = data.reply || '(no reply)';
+      if (data.version) text += ` <small style="color:gray;">(${data.version})</small>`;
+      const botDiv = append('Bot', text);
+
+      // แสดงกริดรูป (ถ้ามี)
+      if (Array.isArray(data.images) && data.images.length) {
+        const grid = document.createElement('div');
+        grid.className = 'img-grid';
+        data.images.forEach(url => {
+          const img = document.createElement('img');
+          img.src = url;
+          img.alt = 'menu';
+          img.loading = 'lazy';
+          img.className = 'img-thumb';
+
+          // ชื่อเมนูจากชื่อไฟล์
+          const name = menuNameFromUrl(url);
+
+          // เปิด modal ในหน้าเดิม
+          img.addEventListener('click', (e) => {
+            e.preventDefault();
+            openModal(url, name);
+          });
+
+          grid.appendChild(img);
+        });
+        botDiv.appendChild(grid);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
 
     } catch (err) {
       typing.remove();

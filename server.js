@@ -17,6 +17,54 @@ const CHAT_MODEL = process.env.CHAT_MODEL || "openai/gpt-4o-mini";
 const KB_PATH = process.env.KB_PATH || path.join(__dirname, "kb", "restaurant.md");
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
+/* ----------------------- Static files (images) ----------------------- */
+const STATIC_DIR = process.env.STATIC_DIR || path.join(__dirname, "image");
+const STATIC_BASE_URL = process.env.STATIC_BASE_URL || `http://localhost:${PORT}`;
+app.use("/static", express.static(STATIC_DIR, { maxAge: "30d", immutable: true }));
+
+/* ---- helper: mime detect by extension / magic bytes (รองรับไฟล์ไร้นามสกุล) ---- */
+function mimeFromExt(ext) {
+  switch (ext) {
+    case ".jpg":
+    case ".jpeg": return "image/jpeg";
+    case ".png":  return "image/png";
+    case ".webp": return "image/webp";
+    case ".gif":  return "image/gif";
+    default: return null;
+  }
+}
+function detectImageMime(filePath) {
+  try {
+    const fd = fs.openSync(filePath, "r");
+    const buf = Buffer.alloc(12);
+    const n = fs.readSync(fd, buf, 0, 12, 0);
+    fs.closeSync(fd);
+    if (n < 4) return null;
+    // JPEG
+    if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
+    // PNG
+    if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return "image/png";
+    // GIF
+    if (buf.toString("ascii", 0, 3) === "GIF") return "image/gif";
+    // WEBP (RIFF....WEBP)
+    if (buf.toString("ascii", 0, 4) === "RIFF" && buf.toString("ascii", 8, 12) === "WEBP") return "image/webp";
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/* ---- เส้นทางเสิร์ฟภาพที่ “ตั้ง Content-Type ให้ถูก” แม้ไฟล์ไม่มีนามสกุล ---- */
+app.get("/static-img/:name", (req, res) => {
+  const name = req.params.name;
+  const full = path.join(STATIC_DIR, name);
+  if (!fs.existsSync(full)) return res.status(404).send("Not found");
+  const ext = path.extname(full).toLowerCase();
+  const mime = mimeFromExt(ext) || detectImageMime(full) || "application/octet-stream";
+  res.set("Content-Type", mime);
+  res.sendFile(full);
+});
+
 /* ----------------------- CORS ----------------------- */
 const rawAllowed = (process.env.ALLOWED_REFERER || "")
   .split(",").map(s => s.trim()).filter(Boolean);
@@ -81,9 +129,9 @@ function detectLang(text){
   const s = String(text || "");
   const low = s.toLowerCase();
   if (/[ก-๙]/.test(s)) return "th";
-  if (/[\u3040-\u30ff]/.test(s)) return "ja";               // hiragana/katakana
-  if (/[\u4e00-\u9fff]/.test(s)) return "zh";               // CJK ideographs
-  if (/[가-힣]/.test(s)) return "ko";                        // hangul
+  if (/[\u3040-\u30ff]/.test(s)) return "ja";
+  if (/[\u4e00-\u9fff]/.test(s)) return "zh";
+  if (/[가-힣]/.test(s)) return "ko";
   if (/[ñáéíóúü¿¡]/i.test(s) || /\b(necesito|menú|precio|por\s+favor|hola|dónde|gracias)\b/.test(low)) return "es";
   if (/\b(ciao|grazie|per\s+favore|bisogno|menù|orari|prezzo|apertura|chiusura|ristorante|indirizzo)\b/.test(low)) return "it";
   return "en";
@@ -104,7 +152,7 @@ function isTextInLang(text, lang){
 /* ----------------------- KB topics (must use KB) ----------------------- */
 const KB_TOPICS = [
   /เวลา|เปิด|ปิด|hours?|time|opening|closing|opening\s*hours|กี่โมง|เวลาทำการ/i,
-  /(เมนู|men[uúù])/i, // menu, menú (es), menù (it)
+  /(เมนู|men[uúù])/i,
   /ราคา|บาท|price|เท่าไหร่|เท่าไร|cost|how much/i,
   /โปรโมชัน|โปร|promotion|discount|ส่วนลด/i,
   /จอง|reservation|booking|walk[- ]?in|คิว/i,
@@ -113,7 +161,7 @@ const KB_TOPICS = [
 ];
 function isKBQuestion(q){ return KB_TOPICS.some(rx => rx.test(q)); }
 
-/* ----------------------- Tokenize (Thai-aware) + EN→TH canon for matching ----------------------- */
+/* ----------------------- Tokenize (Thai-aware) + EN→TH canon ----------------------- */
 const WORD_SPLIT = /[^\p{L}\p{N}]+/u;
 const segTH = new Intl.Segmenter("th", { granularity: "word" });
 const CANON = {
@@ -151,7 +199,6 @@ function getSectionByHeader(raw, pattern) {
 function extractRelevantContext(raw, q, maxChars = 2000, askKB = false){
   if (!raw) return "";
 
-  // 1) menu → pull entire menu section (covers menu/menú/menù/เมนู)
   if (askKB && /(เมนู|men[uúù])/i.test(q)) {
     const sec = getSectionByHeader(raw, /(เมนู|men[uúù])/i);
     if (sec && sec.trim()) {
@@ -159,7 +206,6 @@ function extractRelevantContext(raw, q, maxChars = 2000, askKB = false){
     }
   }
 
-  // 2) token-based relevance
   const lines = raw.split(/\r?\n/);
   const qTokens = tokenize(q);
   const qSet = new Set(qTokens);
@@ -224,7 +270,7 @@ POLICY:
 - Keep replies friendly and concise (≤2 sentences).
 `.trim();
 
-/* ----------------------- Translator (guard if model slips language) ----------------------- */
+/* ----------------------- Translator guard ----------------------- */
 async function forceTranslateTo(text, targetLang, apiHeaders){
   const name = LANG_NAME[targetLang] || targetLang;
   const prompt = `
@@ -250,10 +296,69 @@ TEXT:
   return r.data?.choices?.[0]?.message?.content?.trim() || text;
 }
 
+/* ----------------------- Helper: pick menu images ----------------------- */
+function getMenuImages(limit = 8) {
+  try {
+    if (!fs.existsSync(STATIC_DIR)) return [];
+    const all = fs.readdirSync(STATIC_DIR).sort();
+    const picked = [];
+    for (const f of all) {
+      const full = path.join(STATIC_DIR, f);
+      const ext = path.extname(f).toLowerCase();
+      const byExt = /\.(jpe?g|png|webp|gif)$/i.test(f);
+      const byMagic = !ext && detectImageMime(full); // รองรับไฟล์ไร้นามสกุล
+      if (byExt || byMagic) picked.push(f);
+      if (picked.length >= limit) break;
+    }
+    // ใช้เส้นทาง /static-img/ เพื่อบังคับ Content-Type ให้ถูก แม้ไฟล์ไม่มีนามสกุล
+    return picked.map(f => `${STATIC_BASE_URL}/static-img/${encodeURIComponent(f)}`);
+  } catch (e) {
+    console.warn("getMenuImages error:", e.message);
+    return [];
+  }
+}
+
 /* ----------------------- Routes ----------------------- */
 app.get("/", (_req, res) => res.type("text/plain").send("SUNBI KKOMA KIMBAP Chat API"));
+
+// debug: ตรวจว่ามีไฟล์อะไรบ้าง และตัวไหนถูกพิจารณาว่าเป็นรูป
+app.get("/debug/images", (_req, res) => {
+  try {
+    const exists = fs.existsSync(STATIC_DIR);
+    const all = exists ? fs.readdirSync(STATIC_DIR).sort() : [];
+    const picked = all.filter(f => {
+      const full = path.join(STATIC_DIR, f);
+      return /\.(jpe?g|png|webp|gif)$/i.test(f) || (!path.extname(f) && !!detectImageMime(full));
+    });
+    res.json({
+      static_dir: STATIC_DIR,
+      exists,
+      total_files: all.length,
+      picked_count: picked.length,
+      picked
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get("/health", (_req, res) => {
-  res.json({ ok:true, kb_path:KB_PATH, kb_loaded:!!RAW_TEXT, kb_length:RAW_TEXT.length||0, model:CHAT_MODEL });
+  let staticExists = false, staticCount = 0;
+  try {
+    staticExists = fs.existsSync(STATIC_DIR);
+    staticCount = staticExists ? fs.readdirSync(STATIC_DIR).length : 0;
+  } catch {}
+  res.json({
+    ok:true,
+    kb_path:KB_PATH,
+    kb_loaded:!!RAW_TEXT,
+    kb_length:RAW_TEXT.length||0,
+    model:CHAT_MODEL,
+    static_dir: STATIC_DIR,
+    static_base_url: STATIC_BASE_URL,
+    static_exists: staticExists,
+    static_total_files: staticCount
+  });
 });
 
 app.post("/chat", async (req, res) => {
@@ -312,13 +417,18 @@ app.post("/chat", async (req, res) => {
     }
 
     let reply = result.data?.choices?.[0]?.message?.content?.trim() || "";
-
-    // Guard: if the model replied in the wrong language, force a translation
     if (reply && !isTextInLang(reply, targetLang)) {
       reply = await forceTranslateTo(reply, targetLang, apiHeaders);
     }
 
-    res.json({ reply: reply || "Sorry, I can’t answer that right now." });
+    // ถ้าผู้ใช้ถาม "เมนู/menu/menú/menù" ให้แนบรูปเมนู (รองรับไฟล์ไม่มีนามสกุลด้วย)
+    let images = [];
+    if (/(เมนู|men[uúù])/i.test(message)) {
+      images = getMenuImages();
+      console.log("[menu-images]", { dir: STATIC_DIR, count: images.length, sample: images.slice(0,3) });
+    }
+
+    res.json({ reply: reply || "Sorry, I can’t answer that right now.", images });
   } catch (err) {
     const detail = err?.response?.data || err?.message || "Server error";
     console.error("Server error:", detail);
