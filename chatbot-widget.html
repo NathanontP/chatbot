@@ -13,7 +13,7 @@
 
 <style>
   #chatbot-widget{position:fixed;bottom:20px;right:20px;font-family:Arial,sans-serif;z-index:9999}
-  #chatbot-button{background:#4CAF50;color:#fff;border-radius:50%;width:60px;height:60px;text-align:center;line-height:60px;font-size:28px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+  #chatbot-button{background:#4CAF50;color:#000000;border-radius:50%;width:60px;height:60px;text-align:center;line-height:60px;font-size:28px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.3)}
   #chatbot-box{display:none;flex-direction:column;width:300px;height:400px;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 4px 10px rgba(0,0,0,.3)}
   #chat-header{background:#4CAF50;color:#fff;padding:10px;text-align:center}
   #chat-messages{flex:1;padding:10px;overflow-y:auto;font-size:14px;background:#fafafa}
@@ -25,7 +25,7 @@
 </style>
 
 <script>
-  const API_URL = "https://weebly-chatbot-api.onrender.com/chat";
+  const API_URL = "http://localhost:3001/chat";
 
   const chatbotButton = document.getElementById('chatbot-button');
   const chatbotBox = document.getElementById('chatbot-box');
