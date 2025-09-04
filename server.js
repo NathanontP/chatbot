@@ -68,17 +68,43 @@ function watchKB() {
 }
 function ensureKBLoaded(){ if (!RAW_TEXT) loadKBOnce(); }
 
-/* ----------------------- Parse minimal shop meta ----------------------- */
+/* ----------------------- Shop meta ----------------------- */
 function parseShopMeta(raw) {
   const name = (raw.match(/ชื่อร้าน[:：]\s*(.+)/) || [])[1]?.trim() || "SUNBI KKOMA KIMBAP";
-  const line = (raw.match(/LINE[:：]\s*([^\s]+)/i) || [])[1]?.trim() || null; // e.g. @sunbikkoma
+  const line = (raw.match(/LINE[:：]\s*([^\s]+)/i) || [])[1]?.trim() || null;
   return { name, line };
 }
 
-/* ----------------------- Topics that must use KB (STRICT) ----------------------- */
+/* ----------------------- Detect language (th/en/es/it/zh/ja/ko) ----------------------- */
+const LANG_NAME = { th:"Thai", en:"English", es:"Spanish", it:"Italian", zh:"Chinese", ja:"Japanese", ko:"Korean" };
+function detectLang(text){
+  const s = String(text || "");
+  const low = s.toLowerCase();
+  if (/[ก-๙]/.test(s)) return "th";
+  if (/[\u3040-\u30ff]/.test(s)) return "ja";               // hiragana/katakana
+  if (/[\u4e00-\u9fff]/.test(s)) return "zh";               // CJK ideographs
+  if (/[가-힣]/.test(s)) return "ko";                        // hangul
+  if (/[ñáéíóúü¿¡]/i.test(s) || /\b(necesito|menú|precio|por\s+favor|hola|dónde|gracias)\b/.test(low)) return "es";
+  if (/\b(ciao|grazie|per\s+favore|bisogno|menù|orari|prezzo|apertura|chiusura|ristorante|indirizzo)\b/.test(low)) return "it";
+  return "en";
+}
+function isTextInLang(text, lang){
+  const t = String(text||"");
+  switch(lang){
+    case "th": return /[ก-๙]/.test(t);
+    case "ja": return /[\u3040-\u30ff]/.test(t);
+    case "zh": return /[\u4e00-\u9fff]/.test(t);
+    case "ko": return /[가-힣]/.test(t);
+    case "es": return /[ñáéíóúü¿¡]/i.test(t) || /\b(el|la|los|las|de|del|y|que)\b/i.test(t);
+    case "it": return /\b(il|lo|la|gli|le|del|della|dei|degli|e|che)\b/i.test(t) || /[àèéìòù]/i.test(t);
+    case "en": default: return /[A-Za-z]/.test(t) && !(/[ก-๙\u3040-\u30ff\u4e00-\u9fff가-힣]/.test(t));
+  }
+}
+
+/* ----------------------- KB topics (must use KB) ----------------------- */
 const KB_TOPICS = [
   /เวลา|เปิด|ปิด|hours?|time|opening|closing|opening\s*hours|กี่โมง|เวลาทำการ/i,
-  /(เมนู|men[uúù])/i,                     // menu, menú, menù
+  /(เมนู|men[uúù])/i, // menu, menú (es), menù (it)
   /ราคา|บาท|price|เท่าไหร่|เท่าไร|cost|how much/i,
   /โปรโมชัน|โปร|promotion|discount|ส่วนลด/i,
   /จอง|reservation|booking|walk[- ]?in|คิว/i,
@@ -90,7 +116,6 @@ function isKBQuestion(q){ return KB_TOPICS.some(rx => rx.test(q)); }
 /* ----------------------- Tokenize (Thai-aware) + EN→TH canon for matching ----------------------- */
 const WORD_SPLIT = /[^\p{L}\p{N}]+/u;
 const segTH = new Intl.Segmenter("th", { granularity: "word" });
-// english terms → thai base tokens so we can match Thai lines in .md
 const CANON = {
   line:"line", tel:"โทร", phone:"โทร", contact:"ติดต่อ",
   facebook:"facebook", instagram:"ig", ig:"ig",
@@ -104,14 +129,10 @@ const CANON = {
 };
 function tokenize(text){
   const segmented = Array.from(segTH.segment(String(text))).map(s => s.segment).join(" ");
-  return segmented
-    .toLowerCase()
-    .split(WORD_SPLIT)
-    .filter(Boolean)
-    .map(t => CANON[t] || t);
+  return segmented.toLowerCase().split(WORD_SPLIT).filter(Boolean).map(t => CANON[t] || t);
 }
 
-/* ----------------------- Section extractor (robust menu) ----------------------- */
+/* ----------------------- Section extractor (robust Menu) ----------------------- */
 function getSectionByHeader(raw, pattern) {
   const lines = raw.split(/\r?\n/);
   let start = -1;
@@ -142,7 +163,6 @@ function extractRelevantContext(raw, q, maxChars = 2000, askKB = false){
   const lines = raw.split(/\r?\n/);
   const qTokens = tokenize(q);
   const qSet = new Set(qTokens);
-
   const boosters = askKB ? new Set(["เวลา","เปิด","ปิด","กี่โมง","เมนู","ราคา","โปรโมชัน","จอง","ที่อยู่","ติดต่อ","line","facebook","ig"]) : new Set();
   const scored = [];
   for (let i=0;i<lines.length;i++){
@@ -152,7 +172,7 @@ function extractRelevantContext(raw, q, maxChars = 2000, askKB = false){
     const lset = new Set(lTokens);
     let score = 0;
     qSet.forEach(t => { if (lset.has(t)) { score += 1; if (boosters.has(t)) score += 1; }});
-    if (/[:：]\s*\S/.test(line)) score += 0.5; // fact-ish
+    if (/[:：]\s*\S/.test(line)) score += 0.5;
     if (askKB && /(เวลา\s*เปิด|เวลา\s*ปิด|เวลาเปิด-ปิด|เวลาทำการ)/i.test(line)) score += 2;
     if (score > 0) scored.push({ i, score });
   }
@@ -171,29 +191,29 @@ function extractRelevantContext(raw, q, maxChars = 2000, askKB = false){
   return ctx;
 }
 
-/* ----------------------- Prompts (language-agnostic) ----------------------- */
-const STRICT_PROFILE = ({ shopName, lineId, userSample }) => `
+/* ----------------------- Prompts ----------------------- */
+const STRICT_PROFILE = ({ shopName, lineId, targetLang, userSample }) => `
 SYSTEM RULES:
-- ALWAYS reply in THE SAME LANGUAGE as the user's message below. Use ONLY that language.
-- USER_MESSAGE_SAMPLE:
-"""${userSample}"""
-- If the CONTEXT is in another language, TRANSLATE the facts into the user's language; keep names, times and numbers unchanged.
+- TARGET_LANG: ${targetLang} (${LANG_NAME[targetLang] || "Unknown"})
+- USER_SAMPLE: """${userSample}"""
+- Your output MUST be written in TARGET_LANG only (same language as USER_SAMPLE). Do not include any other language.
+- If the CONTEXT is in another language, TRANSLATE the facts into TARGET_LANG; keep names, times and numbers unchanged.
 
 ROLE:
 You are a chat assistant for the restaurant "${shopName}".
 
 POLICY:
 - Answer ONLY using the provided CONTEXT. Do not guess or invent details.
-- If the CONTEXT lacks the needed fact, politely say the info isn't available and invite the user to contact the shop${lineId ? ` via LINE (${lineId})` : ""}.
+- If the CONTEXT lacks the needed fact, say politely that the info isn't available and invite the user to contact the shop${lineId ? ` via LINE (${lineId})` : ""}.
 - Keep replies polite and concise (≤2 sentences).
 - For opening hours / menu / price / promotion / reservation, quote facts directly from the CONTEXT.
 `.trim();
 
-const GENERAL_PROFILE = ({ shopName, userSample }) => `
+const GENERAL_PROFILE = ({ shopName, targetLang, userSample }) => `
 SYSTEM RULES:
-- ALWAYS reply in THE SAME LANGUAGE as the user's message below. Use ONLY that language.
-- USER_MESSAGE_SAMPLE:
-"""${userSample}"""
+- TARGET_LANG: ${targetLang} (${LANG_NAME[targetLang] || "Unknown"})
+- USER_SAMPLE: """${userSample}"""
+- Your output MUST be written in TARGET_LANG only (same language as USER_SAMPLE). Do not include any other language.
 
 ROLE:
 You are a chat assistant for the restaurant "${shopName}".
@@ -203,6 +223,32 @@ POLICY:
 - Do NOT invent store-specific facts (hours/menu/price/etc.) beyond the CONTEXT.
 - Keep replies friendly and concise (≤2 sentences).
 `.trim();
+
+/* ----------------------- Translator (guard if model slips language) ----------------------- */
+async function forceTranslateTo(text, targetLang, apiHeaders){
+  const name = LANG_NAME[targetLang] || targetLang;
+  const prompt = `
+Translate the following text into ${name}. 
+Output ${name} only, no explanations, no quotes.
+
+TEXT:
+"""${text}"""`.trim();
+
+  const r = await axios.post(
+    "https://openrouter.ai/api/v1/chat/completions",
+    {
+      model: CHAT_MODEL,
+      temperature: 0,
+      max_tokens: 220,
+      messages: [
+        { role: "system", content: "You are a professional translator." },
+        { role: "user", content: prompt }
+      ],
+    },
+    { headers: apiHeaders, timeout: 20000, validateStatus: s => s>=200 && s<500 }
+  );
+  return r.data?.choices?.[0]?.message?.content?.trim() || text;
+}
 
 /* ----------------------- Routes ----------------------- */
 app.get("/", (_req, res) => res.type("text/plain").send("SUNBI KKOMA KIMBAP Chat API"));
@@ -219,8 +265,9 @@ app.post("/chat", async (req, res) => {
   try {
     ensureKBLoaded();
     const { name: shopName, line: lineId } = parseShopMeta(RAW_TEXT);
+    const targetLang = detectLang(message);
 
-    // OpenRouter headers (Referer)
+    // Referer
     const origin = req.headers.origin || "";
     const chosenFullReferer =
       rawAllowed.find(r => norm(r) === norm(origin)) || rawAllowed[0] || "https://example.com";
@@ -237,8 +284,8 @@ app.post("/chat", async (req, res) => {
     const kbContext = askKB ? extractRelevantContext(RAW_TEXT, message, 2000, true) : "";
 
     const sys = askKB
-      ? STRICT_PROFILE({ shopName, lineId, userSample: message })
-      : GENERAL_PROFILE({ shopName, userSample: message });
+      ? STRICT_PROFILE({ shopName, lineId, targetLang, userSample: message })
+      : GENERAL_PROFILE({ shopName, targetLang, userSample: message });
 
     const systemPrompt = askKB
       ? `${sys}\n\n[CONTEXT]\n${kbContext || "(no relevant facts)"}\n\nFollow all SYSTEM RULES strictly.`
@@ -264,8 +311,14 @@ app.post("/chat", async (req, res) => {
       return res.status(502).json({ error: "LLM upstream error", detail: errBody });
     }
 
-    const reply = result.data?.choices?.[0]?.message?.content?.trim() || "ขออภัย ตอบไม่ได้ชั่วคราว";
-    res.json({ reply });
+    let reply = result.data?.choices?.[0]?.message?.content?.trim() || "";
+
+    // Guard: if the model replied in the wrong language, force a translation
+    if (reply && !isTextInLang(reply, targetLang)) {
+      reply = await forceTranslateTo(reply, targetLang, apiHeaders);
+    }
+
+    res.json({ reply: reply || "Sorry, I can’t answer that right now." });
   } catch (err) {
     const detail = err?.response?.data || err?.message || "Server error";
     console.error("Server error:", detail);
